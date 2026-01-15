@@ -18,7 +18,8 @@ const MOCK_DATA = `
 
 export async function POST(req: NextRequest) {
   try {
-    const { rawText } = await req.json();
+    const body = await req.json();
+    const rawText = body.text || body.rawText;
 
     if (!rawText || rawText.length < 5) {
       return NextResponse.json(
