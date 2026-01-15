@@ -4,7 +4,6 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useRef, useState } from "react";
 import { useAppStore } from "@/lib/store";
 import PedestalGroup from "./PedestalGroup";
-import IntroChessScene from "./IntroChessScene";
 import * as THREE from "three";
 import { Text } from "@react-three/drei";
 
@@ -19,10 +18,9 @@ const TARGETS = {
 };
 
 export default function SceneController() {
-    const { settings } = useAppStore();
+    const { settings, currentMode, setMode } = useAppStore();
     const { camera } = useThree();
 
-    const [mode, setMode] = useState<SceneMode>("INTRO");
     const [lastSwitch, setLastSwitch] = useState(0);
 
     // Cycle Logic
@@ -31,16 +29,13 @@ export default function SceneController() {
         if (time - lastSwitch > settings.slideDuration) {
             setLastSwitch(time);
             // Next mode
-            setMode(prev => {
-                if (prev === "INTRO") return "TOP3";
-                if (prev === "TOP3") return "RANK_4_7";
-                if (prev === "RANK_4_7") return "RANK_8_10";
-                return "INTRO";
-            });
+            const modes: SceneMode[] = ["INTRO", "TOP3", "RANK_4_7", "RANK_8_10"];
+            const nextIndex = (modes.indexOf(currentMode) + 1) % modes.length;
+            setMode(modes[nextIndex]);
         }
 
         // Camera Lerp
-        const target = TARGETS[mode];
+        const target = TARGETS[currentMode];
         // Gentle Dolly/Zoom
         const zoomOffset = Math.sin(time * 0.2) * 0.5;
 
@@ -53,13 +48,8 @@ export default function SceneController() {
 
     return (
         <>
-            {mode === "INTRO" && (
-                <IntroChessScene />
-            )}
-
-
-            {mode !== "INTRO" && (
-                <PedestalGroup mode={mode} />
+            {currentMode !== "INTRO" && (
+                <PedestalGroup mode={currentMode} />
             )}
         </>
     );

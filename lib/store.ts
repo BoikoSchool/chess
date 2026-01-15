@@ -13,6 +13,8 @@ interface AppState {
     calculateRanks: () => void;
     saveToRemote: () => Promise<void>;
     loadFromRemote: () => Promise<void>;
+    currentMode: "INTRO" | "TOP3" | "RANK_4_7" | "RANK_8_10";
+    setMode: (mode: "INTRO" | "TOP3" | "RANK_4_7" | "RANK_8_10") => void;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -27,6 +29,9 @@ export const useAppStore = create<AppState>()(
         (set, get) => ({
             students: [],
             settings: DEFAULT_SETTINGS,
+            currentMode: "INTRO",
+
+            setMode: (mode) => set({ currentMode: mode }),
 
             setStudents: (newStudents) => {
                 set({ students: newStudents });
