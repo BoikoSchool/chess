@@ -9,8 +9,10 @@ interface AppState {
 
     // Actions
     setStudents: (students: Student[]) => void;
-    updateSettings: (settings: Partial<AppSettings>) => void;
+    setSettings: (settings: Partial<AppSettings>) => void;
     calculateRanks: () => void;
+    saveToRemote: () => Promise<void>;
+    loadFromRemote: () => Promise<void>;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -31,7 +33,7 @@ export const useAppStore = create<AppState>()(
                 get().calculateRanks(); // Auto-recalc on update
             },
 
-            updateSettings: (newSettings) => {
+            setSettings: (newSettings) => {
                 set((state) => ({ settings: { ...state.settings, ...newSettings } }));
                 if (newSettings.tieBreaker) {
                     get().calculateRanks();
@@ -40,33 +42,59 @@ export const useAppStore = create<AppState>()(
 
             calculateRanks: () => {
                 const { students, settings } = get();
-                // Sort by points descending
+                // Sort by points descending, then by last name for stable tie-breaking
                 const sorted = [...students].sort((a, b) => {
                     if (b.points !== a.points) return b.points - a.points;
-                    // Tie-breaker: alphabetical if points equal (secondary sort)
                     return a.lastName.localeCompare(b.lastName);
                 });
 
-                // Assign ranks
+                const ranked = sorted.map((student) => ({ ...student })); // Create new array of objects
+
+                // Correct Rank Logic based on settings.tieBreaker
                 let currentRank = 1;
-                const ranked = sorted.map((student, index) => {
-                    let rank = currentRank;
-                    if (settings.tieBreaker === 'shared') {
-                        // If points same as previous, share rank
-                        if (index > 0 && student.points === sorted[index - 1].points) {
-                            rank = sorted[index - 1].rank;
-                        } else {
-                            rank = index + 1;
+                for (let i = 0; i < ranked.length; i++) {
+                    if (i > 0) {
+                        if (ranked[i].points < ranked[i - 1].points) {
+                            // If points are less than the previous student, assign a new rank
+                            currentRank = i + 1;
+                        } else if (settings.tieBreaker === 'stable') {
+                            // If points are equal and tieBreaker is 'stable', assign a new rank (index + 1)
+                            currentRank = i + 1;
                         }
-                    } else {
-                        // Stable: just index + 1
-                        rank = index + 1;
+                        // If points are equal and tieBreaker is 'shared', currentRank remains the same
                     }
-                    return { ...student, rank };
-                });
+                    ranked[i].rank = currentRank;
+                }
 
                 set({ students: ranked });
             },
+
+            saveToRemote: async () => {
+                const { students, settings } = get();
+                try {
+                    await fetch('/api/rankings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ students, settings }),
+                    });
+                    console.log('Saved to KV');
+                } catch (e) {
+                    console.error('Failed to save', e);
+                }
+            },
+
+            loadFromRemote: async () => {
+                try {
+                    const res = await fetch('/api/rankings');
+                    if (!res.ok) throw new Error('Failed to fetch');
+                    const data = await res.json();
+                    if (data.students) set({ students: data.students });
+                    if (data.settings) set((state) => ({ settings: { ...state.settings, ...data.settings } }));
+                    console.log('Loaded from KV');
+                } catch (e) {
+                    console.error('Failed to load', e);
+                }
+            }
         }),
         {
             name: 'boiko-chess-storage',
@@ -74,3 +102,4 @@ export const useAppStore = create<AppState>()(
         }
     )
 );
+

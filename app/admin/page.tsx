@@ -8,14 +8,19 @@ import { Loader2, Save, Play, Settings, Upload, Trash2, Edit2 } from "lucide-rea
 
 export default function AdminPage() {
     const router = useRouter();
-    const { students, settings, setStudents, updateSettings } = useAppStore();
+    const { students, setStudents, settings, setSettings, calculateRanks, saveToRemote, loadFromRemote } = useAppStore();
 
-    const [rawText, setRawText] = useState("");
+    const [rawInput, setRawInput] = useState("");
     const [isParsing, setIsParsing] = useState(false);
     const [localStudents, setLocalStudents] = useState<Student[]>([]);
     const [activeTab, setActiveTab] = useState<"input" | "table">("input");
 
-    // Load students from store on mount
+    // Load initial data from KV on mount
+    useEffect(() => {
+        loadFromRemote();
+    }, [loadFromRemote]);
+
+    // Sync local state when store updates (initial load)
     useEffect(() => {
         setLocalStudents(students);
     }, [students]);
@@ -23,28 +28,32 @@ export default function AdminPage() {
     const handleParse = async () => {
         setIsParsing(true);
         try {
-            const response = await fetch("/api/ai/parse", {
+            const res = await fetch("/api/ai/parse", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ rawText }),
+                body: JSON.stringify({ text: rawInput }),
             });
-
-            const data = await response.json();
+            const data = await res.json();
             if (data.students) {
+                // Determine IDs if missing (server parsing might not add UUIDs if basic)
+                // Assuming server returns valid Student objects or we patch them.
+                // For now, assume good data.
                 setLocalStudents(data.students);
                 setActiveTab("table");
             }
-        } catch (error) {
-            console.error("Parse failed", error);
-            alert("Parsing failed. Check console.");
-        } finally {
-            setIsParsing(false);
+        } catch (e) {
+            console.error(e);
+            alert("Error parsing data");
         }
+        setIsParsing(false);
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
+        // Commit local changes to store (triggering recalc/sort)
         setStudents(localStudents);
-        alert("Saved successfully!");
+        // Save sorted data to cloud
+        await saveToRemote();
+        alert("Saved to Cloud!");
     };
 
     const updateStudent = (id: string, field: keyof Student, value: any) => {
@@ -93,14 +102,14 @@ export default function AdminPage() {
                             Paste the raw ranking list below. The AI will try to extract names, points, and classes.
                         </p>
                         <textarea
-                            value={rawText}
-                            onChange={(e) => setRawText(e.target.value)}
+                            value={rawInput}
+                            onChange={(e) => setRawInput(e.target.value)}
                             className="w-full h-64 bg-zinc-950 border border-zinc-800 rounded-lg p-4 text-sm font-mono text-zinc-300 focus:outline-none focus:ring-2 focus:ring-amber-900 resize-none"
                             placeholder="1. Ivanov Ivan - 150 - 5-A&#10;2. Petrenko Petro - 140 - 3-B..."
                         />
                         <button
                             onClick={handleParse}
-                            disabled={isParsing || !rawText}
+                            disabled={isParsing || !rawInput}
                             className="mt-4 w-full flex items-center justify-center gap-2 py-3 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 rounded-lg font-medium transition-colors border border-zinc-700"
                         >
                             {isParsing ? <Loader2 className="animate-spin w-4 h-4" /> : "AI Parse & Generate"}
@@ -118,7 +127,7 @@ export default function AdminPage() {
                                 <input
                                     type="number"
                                     value={settings.slideDuration}
-                                    onChange={(e) => updateSettings({ slideDuration: parseInt(e.target.value) || 5 })}
+                                    onChange={(e) => setSettings({ slideDuration: parseInt(e.target.value) || 5 })}
                                     className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm"
                                 />
                             </div>
@@ -126,7 +135,7 @@ export default function AdminPage() {
                                 <label className="block text-xs text-zinc-500 mb-1 uppercase tracking-wider">Tie Breaker</label>
                                 <select
                                     value={settings.tieBreaker}
-                                    onChange={(e) => updateSettings({ tieBreaker: e.target.value as any })}
+                                    onChange={(e) => setSettings({ tieBreaker: e.target.value as any })}
                                     className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm"
                                 >
                                     <option value="shared">Shared Rank (e.g. 1, 2, 2, 4)</option>
@@ -177,6 +186,7 @@ export default function AdminPage() {
                                                             const val = e.target.value;
                                                             const parts = val.split(' ');
                                                             updateStudent(s.id, 'fullName', val);
+                                                            // Also update components heuristically
                                                             updateStudent(s.id, 'lastName', parts[0] || "");
                                                             updateStudent(s.id, 'firstName', parts[1] || "");
                                                         }}

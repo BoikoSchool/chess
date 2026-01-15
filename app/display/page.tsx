@@ -22,6 +22,16 @@ export default function DisplayPage() {
         }
     };
 
+    const { loadFromRemote } = useAppStore();
+
+    useEffect(() => {
+        // Fetch latest data when display loads
+        loadFromRemote();
+
+        // Optional: Poll every minute? 
+        // For now, let's keep it simple: refresh page to update.
+    }, [loadFromRemote]);
+
     return (
         <main className="w-full h-screen bg-[#0b0b0b] relative overflow-hidden">
             {/* UI Overlay */}
