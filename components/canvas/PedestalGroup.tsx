@@ -80,7 +80,7 @@ import { AppSettings } from "@/lib/types";
 
 // Pass mode to TitleGroup
 function TitleGroup({ settings, mode }: { settings: AppSettings, mode: string }) {
-    const yPos = mode === "TOP3" ? 9 : 6;
+    const yPos = mode === "TOP3" ? 7.5 : 6;
     return (
         <group position={[0, yPos, -10]}>
             <Text
