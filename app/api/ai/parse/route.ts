@@ -35,42 +35,55 @@ export async function POST(req: NextRequest) {
       // --- FALLBACK MOCK PARSER (Heuristic) ---
       console.warn("No OPENAI_API_KEY found, using crude regex parser.");
       const students: Student[] = [];
-      const lines = rawText.split('\n');
 
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        // Crude Regex: Match anything that looks like "Name - Points - Class"
-        // This is just a backup.
-        const parts = line.split(/[-–—]/).map((s: string) => s.trim());
-        // Expecting at least: Name, Points
-        if (parts.length >= 2) {
-          const name = parts[0];
-          const pointsStr = parts[1].replace(/[^0-9]/g, '');
-          const classLabel = parts[2] || "N/A";
+      // Split by newline OR by numbered list lookahead (e.g. " 2. ", " 10. ")
+      // This helps if people paste a single paragraph of data.
+      const rawBlocks = rawText.split(/(?=\s*\d+\.\s+)/);
 
-          if (name && pointsStr) {
-            const nameParts = name.replace(/^\d+\.\s*/, '').split(' '); // Remove leading "1. "
-            students.push({
-              id: uuidv4(),
-              firstName: nameParts[1] || "",
-              lastName: nameParts[0] || name,
-              fullName: name.replace(/^\d+\.\s*/, ''),
-              points: parseInt(pointsStr, 10),
-              classLabel: classLabel,
-              rank: 0 // Recalculated by store
-            });
+      for (const block of rawBlocks) {
+        const lines = block.split('\n');
+        for (const line of lines) {
+          if (!line.trim()) continue;
+
+          // Split by hyphens but only those surrounded by spaces where possible
+          // or just split and be smart about joining.
+          // Format expected: "Name - Points - Class"
+          const parts = line.split(/\s*[-–—]\s*/).map((s: string) => s.trim());
+
+          if (parts.length >= 2) {
+            let name = parts[0].replace(/^\d+\.\s*/, '').trim();
+            let pointsStr = "";
+            let classLabel = "N/A";
+
+            // If we have 3 or more parts: [Name, Points, Class...]
+            if (parts.length >= 3) {
+              pointsStr = parts[1].replace(/[^0-9]/g, '');
+              // Join the rest as the class label in case it contains hyphens
+              classLabel = parts.slice(2).join('-');
+            } else {
+              // Only 2 parts: [Name, Points]
+              pointsStr = parts[1].replace(/[^0-9]/g, '');
+            }
+
+            if (name && pointsStr) {
+              const nameParts = name.split(/\s+/);
+              students.push({
+                id: uuidv4(),
+                firstName: nameParts.slice(1).join(' ') || "",
+                lastName: nameParts[0] || name,
+                fullName: name,
+                points: parseInt(pointsStr, 10),
+                classLabel: classLabel,
+                rank: 0
+              });
+            }
           }
         }
       }
 
-      // If the regex failed to find anything substantial, return MOCK data for demo purposes if specific trigger word is used
-      if (students.length === 0 && rawText.includes("demo")) {
-        // Return pre-canned data
-      }
-
       return NextResponse.json({
         students: students,
-        warnings: ["Running in Offline Mode (No API Key). Parsing was done via simple regex. Format strictly as 'Name - Points - Class' or add API Key."]
+        warnings: ["Running in Offline Mode (No API Key). Parsing was done via simple regex. Format as 'Name - Points - Class'."]
       } as ParseResult);
     }
 
@@ -86,8 +99,9 @@ export async function POST(req: NextRequest) {
     - lastName (string)
     - fullName (string)
     - points (integer)
-    - classLabel (string, e.g. "3-A", "10 class")
+    - classLabel (string, preserve full label like "3-C", "1-Г", "5 class")
     
+    IMPORTANT: Do not strip letters or hyphens from classLabel.
     If data is missing/unclear, guess reasonably or skip.
     Output valid JSON only.
     `;
